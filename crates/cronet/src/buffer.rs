@@ -1,4 +1,4 @@
-use std::{ptr::NonNull, slice};
+use std::{cell::Cell, ptr::NonNull, slice};
 
 use crate::sys;
 
@@ -6,6 +6,7 @@ use crate::sys;
 pub struct Buffer {
     raw: NonNull<sys::Cronet_Buffer>,
     callback: Option<NonNull<sys::Cronet_BufferCallback>>,
+    native_owned: Cell<bool>,
 }
 
 // SAFETY: A buffer has unique ownership and Cronet's API explicitly transfers its use
@@ -25,6 +26,7 @@ impl Buffer {
         Self {
             raw: ptr,
             callback: None,
+            native_owned: Cell::new(false),
         }
     }
 
@@ -69,6 +71,7 @@ impl Buffer {
         Self {
             raw,
             callback: Some(callback),
+            native_owned: Cell::new(false),
         }
     }
 
@@ -87,6 +90,21 @@ impl Buffer {
     /// Returns the native pointer for request reads.
     pub fn as_raw(&self) -> sys::Cronet_BufferPtr {
         self.raw.as_ptr()
+    }
+
+    pub(crate) fn transfer_to_native(&self) {
+        self.native_owned.set(true);
+    }
+
+    /// Marks a buffer returned by `OnReadCompleted` as application-owned.
+    ///
+    /// Returns `false` when `raw` is not this buffer.
+    pub fn reclaim_from_read(&self, raw: sys::Cronet_BufferPtr) -> bool {
+        if self.raw.as_ptr() != raw {
+            return false;
+        }
+        self.native_owned.set(false);
+        true
     }
 }
 
@@ -117,9 +135,11 @@ impl AsMut<[u8]> for Buffer {
 
 impl Drop for Buffer {
     fn drop(&mut self) {
-        // SAFETY: This wrapper uniquely owns the native object. Destroy invokes
-        // the optional data callback before returning.
-        unsafe { sys::Cronet_Buffer_Destroy(self.raw.as_ptr()) };
+        if !self.native_owned.get() {
+            // SAFETY: This wrapper uniquely owns the native object. Destroy
+            // invokes the optional data callback before returning.
+            unsafe { sys::Cronet_Buffer_Destroy(self.raw.as_ptr()) };
+        }
         if let Some(callback) = self.callback.take() {
             // SAFETY: A conforming Cronet clears the context in our callback.
             // If initialization failed to invoke it, reclaim the Rust slice

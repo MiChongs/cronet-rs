@@ -31,6 +31,7 @@ unsafe impl Send for Runnable {}
 
 struct ExecutorState {
     dispatch: Box<dyn Fn(Runnable) + Send + Sync>,
+    barrier: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 /// Application executor used by Cronet for callbacks.
@@ -46,8 +47,16 @@ unsafe impl Send for Executor {}
 impl Executor {
     /// Creates an executor from a command dispatcher.
     pub fn new(dispatch: impl Fn(Runnable) + Send + Sync + 'static) -> Self {
+        Self::new_with_barrier(dispatch, None::<fn()>)
+    }
+
+    fn new_with_barrier(
+        dispatch: impl Fn(Runnable) + Send + Sync + 'static,
+        barrier: Option<impl Fn() + Send + Sync + 'static>,
+    ) -> Self {
         let state = Box::new(ExecutorState {
             dispatch: Box::new(dispatch),
+            barrier: barrier.map(|barrier| Box::new(barrier) as _),
         });
         let state = NonNull::from(Box::leak(state));
         // SAFETY: Trampoline has the exact generated C signature.
@@ -62,15 +71,36 @@ impl Executor {
 
     /// Creates an executor backed by one dedicated Rust thread.
     pub fn dedicated_thread(name: impl Into<String>) -> std::io::Result<Self> {
-        let (sender, receiver) = mpsc::channel::<Runnable>();
+        enum Command {
+            Run(Runnable),
+            Barrier(mpsc::SyncSender<()>),
+        }
+
+        let (sender, receiver) = mpsc::channel::<Command>();
         thread::Builder::new().name(name.into()).spawn(move || {
             while let Ok(command) = receiver.recv() {
-                command.run();
+                match command {
+                    Command::Run(command) => {
+                        command.run();
+                    }
+                    Command::Barrier(sender) => {
+                        let _ = sender.send(());
+                    }
+                }
             }
         })?;
-        Ok(Self::new(move |command| {
-            let _ = sender.send(command);
-        }))
+        let dispatch_sender = sender.clone();
+        Ok(Self::new_with_barrier(
+            move |command| {
+                let _ = dispatch_sender.send(Command::Run(command));
+            },
+            Some(move || {
+                let (completed, wait) = mpsc::sync_channel(0);
+                if sender.send(Command::Barrier(completed)).is_ok() {
+                    let _ = wait.recv();
+                }
+            }),
+        ))
     }
 
     /// Executes callbacks immediately on the calling Cronet thread.
@@ -83,6 +113,13 @@ impl Executor {
     /// Returns the native executor pointer.
     pub fn as_raw(&self) -> sys::Cronet_ExecutorPtr {
         self.raw.as_ptr()
+    }
+
+    pub(crate) fn wait_idle(&self) {
+        // SAFETY: The state is heap-stable for the executor lifetime.
+        if let Some(barrier) = &unsafe { self.state.as_ref() }.barrier {
+            barrier();
+        }
     }
 }
 
