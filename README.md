@@ -48,8 +48,9 @@ CRONET_LIB_DIR=/path/to/sdk/lib
 CRONET_LIB_NAME=cronet
 ```
 
-`CRONET_INCLUDE_DIR` must contain `cronet_c.h` from a SagerNet SDK,
-`cronet.idl_c.h`, or the Chromium-relative generated header. Place
+When using `CRONET_INCLUDE_DIR`, enable the `cronet-sys/generate-bindings`
+feature and install libclang. The directory must contain `cronet_c.h` from a
+SagerNet SDK, `cronet.idl_c.h`, or the Chromium-relative generated header. Place
 `bidirectional_stream_c.h` in the same include search path when supplied by the
 SDK. The directory containing `cronet_export.h` may be supplied separately
 through `CRONET_EXPORT_INCLUDE_DIR`.

@@ -31,6 +31,24 @@ fn development_headers_cover_pinned_cronet_go_abi() {
 }
 
 #[test]
+fn pregenerated_bindings_cover_pinned_cronet_go_abi() {
+    let bindings = include_str!("../src/bindings_pinned.rs")
+        .split_whitespace()
+        .collect::<String>();
+    let missing = CRONET_GO_SYMBOLS
+        .lines()
+        .filter(|symbol| !bindings.contains(&format!("pubfn{symbol}(")))
+        .collect::<Vec<_>>();
+
+    assert!(
+        missing.is_empty(),
+        "pre-generated bindings are missing {} pinned symbols:\n{}",
+        missing.len(),
+        missing.join("\n")
+    );
+}
+
+#[test]
 fn pinned_cronet_go_symbol_manifest_is_stable() {
     assert_eq!(
         CRONET_GO_SYMBOLS.lines().count(),

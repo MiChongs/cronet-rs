@@ -21,8 +21,12 @@ include = [
     "LICENSE",
 ]
 
+[features]
+default = []
+generate-bindings = ["dep:bindgen"]
+
 [build-dependencies]
-bindgen = "0.72"
+bindgen = { version = "0.72", optional = true }
 
 [lints]
 workspace = true
