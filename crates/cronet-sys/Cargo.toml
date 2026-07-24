@@ -10,10 +10,23 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-include = ["src/**", "include/**", "build.rs", "wrapper.h", "README.md"]
+include = [
+    "src/**",
+    "include/**",
+    "abi/**",
+    "tests/**",
+    "build.rs",
+    "wrapper.h",
+    "README.md",
+    "LICENSE",
+]
+
+[features]
+default = []
+generate-bindings = ["dep:bindgen"]
 
 [build-dependencies]
-bindgen = "0.72"
+bindgen = { version = "0.72", optional = true }
 
 [lints]
 workspace = true

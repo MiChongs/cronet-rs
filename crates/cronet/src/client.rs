@@ -178,7 +178,7 @@ impl CollectingHandler {
             .get_or_insert_with(|| Buffer::new(self.read_buffer_size));
         // SAFETY: Handler owns the buffer until a terminal callback. It neither
         // reads nor mutates it between Read and OnReadCompleted.
-        if let Err(error) = unsafe { request.read(buffer.as_raw()) } {
+        if let Err(error) = unsafe { request.read(buffer) } {
             self.finish(Err(RequestError::Api(error)));
             request.cancel();
         }
@@ -207,12 +207,16 @@ impl UrlRequestHandler for CollectingHandler {
         &mut self,
         request: crate::RequestHandle,
         info: ResponseInfo,
-        _raw_buffer: crate::sys::Cronet_BufferPtr,
+        raw_buffer: crate::sys::Cronet_BufferPtr,
         bytes_read: u64,
     ) {
         self.info = Some(info);
         let count = usize::try_from(bytes_read).unwrap_or(usize::MAX);
         if let Some(buffer) = self.buffer.as_ref() {
+            assert!(
+                buffer.reclaim_from_read(raw_buffer),
+                "Cronet returned a different read buffer"
+            );
             let count = count.min(buffer.len());
             self.body.extend_from_slice(&buffer.as_ref()[..count]);
         }

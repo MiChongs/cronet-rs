@@ -28,9 +28,15 @@ impl RequestHandle {
     /// # Safety
     ///
     /// The buffer must remain valid and unused until `on_read_completed`.
-    pub unsafe fn read(self, buffer: sys::Cronet_BufferPtr) -> crate::Result<()> {
+    pub unsafe fn read(self, buffer: &mut crate::Buffer) -> crate::Result<()> {
         // SAFETY: Caller upholds the asynchronous buffer lifetime contract.
-        crate::error::Error::from_result(unsafe { sys::Cronet_UrlRequest_Read(self.0, buffer) })
+        let result = crate::error::Error::from_result(unsafe {
+            sys::Cronet_UrlRequest_Read(self.0, buffer.as_raw())
+        });
+        if result.is_ok() {
+            buffer.transfer_to_native();
+        }
+        result
     }
 
     /// Exposes the borrowed native request.

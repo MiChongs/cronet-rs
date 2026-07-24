@@ -307,7 +307,7 @@ fn with_handler(
     }
 }
 
-unsafe fn copy_headers(raw: *mut sys::bidirectional_stream_header_array) -> Vec<Header> {
+unsafe fn copy_headers(raw: *const sys::bidirectional_stream_header_array) -> Vec<Header> {
     if raw.is_null() {
         return Vec::new();
     }
@@ -348,8 +348,8 @@ unsafe extern "C" fn on_stream_ready(stream: *mut sys::bidirectional_stream) {
 
 unsafe extern "C" fn on_response_headers(
     stream: *mut sys::bidirectional_stream,
-    headers: *mut sys::bidirectional_stream_header_array,
-    protocol: *mut core::ffi::c_char,
+    headers: *const sys::bidirectional_stream_header_array,
+    protocol: *const core::ffi::c_char,
 ) {
     // SAFETY: Header array and protocol are callback-scoped.
     let headers = unsafe { copy_headers(headers) };
@@ -378,7 +378,7 @@ unsafe extern "C" fn on_read_completed(
 
 unsafe extern "C" fn on_write_completed(
     stream: *mut sys::bidirectional_stream,
-    _data: *mut core::ffi::c_char,
+    _data: *const core::ffi::c_char,
 ) {
     with_handler(stream, |handler| {
         handler.on_write_completed(BidirectionalStreamHandle(stream));
@@ -387,7 +387,7 @@ unsafe extern "C" fn on_write_completed(
 
 unsafe extern "C" fn on_response_trailers(
     stream: *mut sys::bidirectional_stream,
-    trailers: *mut sys::bidirectional_stream_header_array,
+    trailers: *const sys::bidirectional_stream_header_array,
 ) {
     // SAFETY: Trailer array is callback-scoped.
     let trailers = unsafe { copy_headers(trailers) };

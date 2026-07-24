@@ -25,3 +25,6 @@ Desktop.ini
 *.so
 *.lib
 *.a
+
+# Locally fetched SDK staging
+/target/cronet-sdk/

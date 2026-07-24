@@ -2,9 +2,19 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+      - run: cargo check --workspace --all-targets
+
   rust:
     strategy:
       matrix:
@@ -18,4 +28,4 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace --all-targets
       - run: cargo clippy --workspace --all-targets -- -D warnings
-
+      - run: cargo test --workspace --all-targets

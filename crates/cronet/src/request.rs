@@ -50,6 +50,7 @@ impl UninitializedRequest {
             _engine: PhantomData,
             _callbacks: PhantomData,
             callback: None,
+            executor: None,
             started: Cell::new(false),
         })
     }
@@ -75,6 +76,7 @@ impl UninitializedRequest {
                 NonNull::new(executor.as_raw()).expect("executor pointer is null"),
             )?;
             request.callback = Some(callback);
+            request.executor = Some(executor);
             Ok(request)
         }
     }
@@ -99,6 +101,7 @@ pub struct Request<'engine, 'callbacks> {
     _engine: PhantomData<&'engine Engine>,
     _callbacks: PhantomData<&'callbacks mut ()>,
     callback: Option<&'callbacks UrlRequestCallback>,
+    executor: Option<&'callbacks Executor>,
     started: Cell<bool>,
 }
 
@@ -128,9 +131,13 @@ impl Request<'_, '_> {
     pub unsafe fn read(&self, buffer: &mut Buffer) -> Result<()> {
         // SAFETY: Both objects are live for the call. Cronet's callback signals
         // when the application may reuse the buffer; caller upholds that wait.
-        Error::from_result(unsafe {
+        let result = Error::from_result(unsafe {
             sys::Cronet_UrlRequest_Read(self.ptr.as_ptr(), buffer.as_raw())
-        })
+        });
+        if result.is_ok() {
+            buffer.transfer_to_native();
+        }
+        result
     }
 
     /// Cancels request processing. Completion is reported asynchronously.
@@ -169,6 +176,9 @@ impl Drop for Request<'_, '_> {
             && let Some(callback) = self.callback
         {
             callback.wait_terminal();
+        }
+        if let Some(executor) = self.executor {
+            executor.wait_idle();
         }
         // SAFETY: Callback is idle and this wrapper uniquely owns the request.
         unsafe {
