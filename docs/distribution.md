@@ -58,7 +58,10 @@ Windows and runs:
 - native buffer allocation/destruction;
 - an HTTPS request with status 200;
 - custom DNS interception;
-- a bidirectional CONNECT request and deterministic shutdown.
+- a rejected CONNECT against a normal HTTPS origin;
+- a successful local TLS/H2 Naive CONNECT with all eight padded chunks and an
+  unpadded ninth chunk;
+- deterministic connection and engine shutdown.
 
 Before publishing a source release:
 

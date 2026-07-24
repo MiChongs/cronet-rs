@@ -30,7 +30,9 @@ jobs:
           CRONET_LIB_DIR: ${{ github.workspace }}/target/cronet-sdk/lib
           CRONET_LIB_NAME: cronet
           LD_LIBRARY_PATH: ${{ github.workspace }}/target/cronet-sdk/lib
-        run: cargo run -p cronet --example native_smoke
+        run: |
+          cargo run -p cronet --example native_smoke
+          cargo run -p cronet --example native_naive_e2e
 
   windows:
     runs-on: windows-latest
@@ -49,3 +51,4 @@ jobs:
           $env:CRONET_LIB_NAME = "cronet"
           $env:PATH = "${{ github.workspace }}/target/cronet-sdk/bin;$env:PATH"
           cargo run -p cronet --example native_smoke
+          cargo run -p cronet --example native_naive_e2e

@@ -176,7 +176,7 @@ impl BidirectionalConnection<'_> {
         // SAFETY: Box allocation is stable and read state prevents another
         // access until the callback clears `pending`.
         let result = unsafe { self.stream.read(&mut read.buffer) };
-        if result != 0 {
+        if result == 0 {
             read.pending = false;
             return Err(io::Error::other(format!(
                 "bidirectional_stream_read returned {result}"
@@ -210,7 +210,7 @@ impl BidirectionalConnection<'_> {
         write.pending = true;
         // SAFETY: Write buffer is not changed until completion callback.
         let result = unsafe { self.stream.write(&write.buffer, end_of_stream) };
-        if result != 0 {
+        if result == 0 {
             write.pending = false;
             return Err(io::Error::other(format!(
                 "bidirectional_stream_write returned {result}"
