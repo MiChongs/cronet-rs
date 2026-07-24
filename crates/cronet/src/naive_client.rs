@@ -7,7 +7,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use crate::{
     Engine, EngineParams, Error as CronetError, Header, NaiveConnectOptions, NaiveConnection,
-    NetworkHooks,
+    NetworkHooks, dns,
 };
 
 /// Failure while configuring or starting a [`NaiveClient`].
@@ -17,6 +17,12 @@ pub enum NaiveClientStartError {
     Cronet(CronetError),
     /// Existing experimental-options JSON was malformed.
     ExperimentalOptions(serde_json::Error),
+    /// The proxy URL could not be parsed.
+    InvalidProxyUrl(url::ParseError),
+    /// The proxy URL has no DNS host and no explicit `server_name`.
+    MissingServerName,
+    /// Multiple independent pools are unsupported by upstream in QUIC mode.
+    InsecureConcurrencyWithQuic,
 }
 
 impl fmt::Display for NaiveClientStartError {
@@ -24,6 +30,13 @@ impl fmt::Display for NaiveClientStartError {
         match self {
             Self::Cronet(error) => error.fmt(formatter),
             Self::ExperimentalOptions(error) => error.fmt(formatter),
+            Self::InvalidProxyUrl(error) => error.fmt(formatter),
+            Self::MissingServerName => formatter.write_str(
+                "proxy URL has no DNS host; set NaiveClientOptions::server_name explicitly",
+            ),
+            Self::InsecureConcurrencyWithQuic => {
+                formatter.write_str("insecure concurrency is not supported with QUIC")
+            }
         }
     }
 }
@@ -33,6 +46,9 @@ impl std::error::Error for NaiveClientStartError {
         match self {
             Self::Cronet(error) => Some(error),
             Self::ExperimentalOptions(error) => Some(error),
+            Self::InvalidProxyUrl(error) => Some(error),
+            Self::MissingServerName => None,
+            Self::InsecureConcurrencyWithQuic => None,
         }
     }
 }
@@ -46,6 +62,12 @@ impl From<CronetError> for NaiveClientStartError {
 impl From<serde_json::Error> for NaiveClientStartError {
     fn from(error: serde_json::Error) -> Self {
         Self::ExperimentalOptions(error)
+    }
+}
+
+impl From<url::ParseError> for NaiveClientStartError {
+    fn from(error: url::ParseError) -> Self {
+        Self::InvalidProxyUrl(error)
     }
 }
 
@@ -67,6 +89,19 @@ pub struct NaiveClientOptions {
     pub extra_headers: Vec<Header>,
     /// Enables the SagerNet Cronet HTTP/3 path.
     pub quic: bool,
+    /// Enables HTTPS/SVCB DNS processing required for ECH.
+    pub ech_enabled: bool,
+    /// TLS server name used for HTTPS/SVCB matching. By default this is
+    /// derived from `proxy_url`.
+    pub server_name: Option<String>,
+    /// Network address resolved for `server_name`. This may be an IP literal
+    /// or a different DNS name.
+    pub server_address: Option<String>,
+    /// Fixed binary ECHConfigList injected into matching HTTPS answers.
+    pub ech_config_list: Vec<u8>,
+    /// Optional alternate name queried for HTTPS records before answers are
+    /// rewritten to `server_name`.
+    pub ech_query_server_name: Option<String>,
     /// QUIC connection option, for example `TBBR`, `B2ON`, `QBIC` or `RENO`.
     pub quic_congestion_control: String,
     /// Initial per-stream receive window. Zero selects the upstream default.
@@ -90,6 +125,11 @@ impl NaiveClientOptions {
             insecure_concurrency: 1,
             extra_headers: Vec::new(),
             quic: false,
+            ech_enabled: false,
+            server_name: None,
+            server_address: None,
+            ech_config_list: Vec::new(),
+            ech_query_server_name: None,
             quic_congestion_control: String::new(),
             receive_window: 0,
             quic_session_receive_window: 0,
@@ -121,6 +161,11 @@ impl NaiveClient {
         params.enable_check_result(true);
         params.enable_brotli(true);
         params.socket_pool_limits(2048, 2048, 2040)?;
+        if hooks.has_dns_resolver() {
+            params.async_dns(true)?;
+            params.dns_server_override(&["127.0.0.1:53".to_owned()])?;
+            params.use_dns_https_svcb(options.ech_enabled)?;
+        }
 
         if options.quic {
             params.enable_quic(true);
@@ -144,10 +189,41 @@ impl NaiveClient {
     /// Starts a client with caller-supplied Cronet engine parameters.
     pub fn start_with_params(
         mut options: NaiveClientOptions,
-        hooks: NetworkHooks,
+        mut hooks: NetworkHooks,
         params: &EngineParams,
     ) -> std::result::Result<Self, NaiveClientStartError> {
         options.insecure_concurrency = options.insecure_concurrency.max(1);
+        if options.quic && options.insecure_concurrency > 1 {
+            return Err(NaiveClientStartError::InsecureConcurrencyWithQuic);
+        }
+        let proxy_url = url::Url::parse(&options.proxy_url)?;
+        let proxy_host = proxy_url
+            .host_str()
+            .map(ToOwned::to_owned)
+            .ok_or(NaiveClientStartError::MissingServerName)?;
+        let server_name = options
+            .server_name
+            .clone()
+            .unwrap_or_else(|| proxy_host.clone());
+        let server_address = options
+            .server_address
+            .clone()
+            .unwrap_or_else(|| proxy_host.clone());
+        if hooks.has_dns_resolver() && !server_name.eq_ignore_ascii_case(&server_address) {
+            hooks.configure_server_redirect(server_name.clone(), server_address);
+        }
+        if options.ech_enabled && hooks.has_dns_resolver() {
+            let query_server_name = options
+                .ech_query_server_name
+                .clone()
+                .unwrap_or_else(|| server_name.clone());
+            hooks.configure_ech(dns::EchOptions {
+                server_name,
+                query_server_name,
+                config_list: options.ech_config_list.clone(),
+                quic: options.quic,
+            });
+        }
         let authorization = options.proxy_authorization.clone().or_else(|| {
             options.username.as_ref().map(|username| {
                 let password = options.password.as_deref().unwrap_or_default();

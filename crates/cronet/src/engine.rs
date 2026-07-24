@@ -1,10 +1,13 @@
 use std::{
+    any::Any,
     ffi::{CStr, CString},
+    net::{TcpStream, UdpSocket},
     panic::{AssertUnwindSafe, catch_unwind},
     ptr::NonNull,
+    sync::{Arc, RwLock, atomic::AtomicBool},
 };
 
-use crate::{EngineParams, Result, error::Error, sys};
+use crate::{EngineParams, NetError, Result, dns, error::Error, sys};
 
 /// A started Cronet engine.
 ///
@@ -50,6 +53,7 @@ impl Engine {
         let mut state = Box::new(NetworkHookState {
             tcp: hooks.tcp,
             udp: hooks.udp,
+            _keepalive: hooks._keepalive,
         });
         let context = (&mut *state as *mut NetworkHookState).cast();
 
@@ -156,6 +160,8 @@ pub struct NetworkHooks {
     tcp: Option<Box<TcpDialer>>,
     udp: Option<Box<UdpDialer>>,
     trusted_root_certificates: Option<String>,
+    dns_resolver: Option<Arc<RwLock<Arc<dns::Resolver>>>>,
+    _keepalive: Vec<Box<dyn Any + Send + Sync>>,
 }
 
 type TcpDialer = dyn Fn(&str, u16) -> i32 + Send + Sync;
@@ -173,6 +179,22 @@ impl NetworkHooks {
         self
     }
 
+    /// Transfers connected TCP sockets returned by `connector` to Cronet.
+    ///
+    /// Ownership of a successful socket is consumed by the native network
+    /// stack. I/O errors are mapped to Chromium `net::Error` values.
+    pub fn tcp_connector(
+        mut self,
+        connector: impl Fn(&str, u16) -> std::io::Result<TcpStream> + Send + Sync + 'static,
+    ) -> Self {
+        self.tcp = Some(Box::new(move |address, port| {
+            connector(address, port)
+                .and_then(tcp_stream_into_cronet_fd)
+                .unwrap_or_else(|error| NetError::from_io(&error).code())
+        }));
+        self
+    }
+
     /// Redirects UDP socket creation.
     pub fn udp_dialer(
         mut self,
@@ -182,11 +204,187 @@ impl NetworkHooks {
         self
     }
 
+    /// Transfers connected UDP sockets returned by `connector` to Cronet.
+    pub fn udp_connector(
+        mut self,
+        connector: impl Fn(&str, u16) -> std::io::Result<UdpSocket> + Send + Sync + 'static,
+    ) -> Self {
+        self.udp = Some(Box::new(move |address, port| {
+            let socket = match connector(address, port) {
+                Ok(socket) => socket,
+                Err(error) => {
+                    return UdpDialResult {
+                        fd: NetError::from_io(&error).code(),
+                        local_address: String::new(),
+                        local_port: 0,
+                    };
+                }
+            };
+            let (local_address, local_port) = socket
+                .local_addr()
+                .map(|address| (address.ip().to_string(), address.port()))
+                .unwrap_or_default();
+            let fd = udp_socket_into_cronet_fd(socket)
+                .unwrap_or_else(|error| NetError::from_io(&error).code());
+            UdpDialResult {
+                fd,
+                local_address,
+                local_port,
+            }
+        }));
+        self
+    }
+
+    /// Intercepts Cronet's DNS-over-UDP and DNS-over-TCP traffic.
+    ///
+    /// `resolver` receives one unframed DNS wire message and must return one
+    /// unframed DNS response. Existing TCP/UDP dialers remain the fallback for
+    /// non-DNS destinations.
+    pub fn dns_resolver(
+        mut self,
+        resolver: impl Fn(&[u8]) -> std::io::Result<Vec<u8>> + Send + Sync + 'static,
+    ) -> Self {
+        let resolver: Arc<dns::Resolver> = Arc::new(resolver);
+        let resolver = Arc::new(RwLock::new(resolver));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let previous_tcp = self.tcp.take();
+        let previous_udp = self.udp.take();
+
+        let tcp_resolver = Arc::clone(&resolver);
+        let tcp_shutdown = Arc::clone(&shutdown);
+        self.tcp = Some(Box::new(move |address, port| {
+            if is_dns_endpoint(address, port) {
+                return dns::tcp_proxy(current_resolver(&tcp_resolver), Arc::clone(&tcp_shutdown))
+                    .and_then(tcp_stream_into_cronet_fd)
+                    .unwrap_or_else(|error| NetError::from_io(&error).code());
+            }
+            previous_tcp
+                .as_ref()
+                .map_or(NetError::CONNECTION_FAILED.code(), |dialer| {
+                    dialer(address, port)
+                })
+        }));
+
+        let udp_resolver = Arc::clone(&resolver);
+        let udp_shutdown = Arc::clone(&shutdown);
+        self.udp = Some(Box::new(move |address, port| {
+            if is_dns_endpoint(address, port) {
+                return match dns::udp_proxy(
+                    current_resolver(&udp_resolver),
+                    Arc::clone(&udp_shutdown),
+                ) {
+                    Ok(socket) => {
+                        let (local_address, local_port) = socket
+                            .local_addr()
+                            .map(|address| (address.ip().to_string(), address.port()))
+                            .unwrap_or_default();
+                        UdpDialResult {
+                            fd: udp_socket_into_cronet_fd(socket)
+                                .unwrap_or_else(|error| NetError::from_io(&error).code()),
+                            local_address,
+                            local_port,
+                        }
+                    }
+                    Err(error) => UdpDialResult {
+                        fd: NetError::from_io(&error).code(),
+                        local_address: String::new(),
+                        local_port: 0,
+                    },
+                };
+            }
+            previous_udp.as_ref().map_or_else(
+                || UdpDialResult {
+                    fd: NetError::CONNECTION_FAILED.code(),
+                    local_address: String::new(),
+                    local_port: 0,
+                },
+                |dialer| dialer(address, port),
+            )
+        }));
+        self.dns_resolver = Some(resolver);
+        self._keepalive.push(Box::new(dns::ShutdownGuard(shutdown)));
+        self
+    }
+
+    pub(crate) fn has_dns_resolver(&self) -> bool {
+        self.dns_resolver.is_some()
+    }
+
+    pub(crate) fn configure_ech(&mut self, options: dns::EchOptions) {
+        let Some(resolver) = &self.dns_resolver else {
+            return;
+        };
+        let base = current_resolver(resolver);
+        match resolver.write() {
+            Ok(mut resolver) => *resolver = dns::with_ech(base, options),
+            Err(poisoned) => *poisoned.into_inner() = dns::with_ech(base, options),
+        }
+    }
+
+    pub(crate) fn configure_server_redirect(
+        &mut self,
+        server_name: String,
+        server_address: String,
+    ) {
+        let Some(resolver) = &self.dns_resolver else {
+            return;
+        };
+        let base = current_resolver(resolver);
+        match resolver.write() {
+            Ok(mut resolver) => {
+                *resolver = dns::with_server_redirect(base, server_name, server_address);
+            }
+            Err(poisoned) => {
+                *poisoned.into_inner() =
+                    dns::with_server_redirect(base, server_name, server_address);
+            }
+        }
+    }
+
     /// Replaces trusted root certificates with PEM-encoded roots.
     pub fn trusted_root_certificates(mut self, pem: impl Into<String>) -> Self {
         self.trusted_root_certificates = Some(pem.into());
         self
     }
+}
+
+fn current_resolver(resolver: &RwLock<Arc<dns::Resolver>>) -> Arc<dns::Resolver> {
+    match resolver.read() {
+        Ok(resolver) => Arc::clone(&resolver),
+        Err(poisoned) => Arc::clone(&poisoned.into_inner()),
+    }
+}
+
+#[cfg(unix)]
+fn tcp_stream_into_cronet_fd(stream: TcpStream) -> std::io::Result<i32> {
+    use std::os::fd::IntoRawFd;
+
+    Ok(stream.into_raw_fd())
+}
+
+#[cfg(unix)]
+fn udp_socket_into_cronet_fd(socket: UdpSocket) -> std::io::Result<i32> {
+    use std::os::fd::IntoRawFd;
+
+    Ok(socket.into_raw_fd())
+}
+
+#[cfg(windows)]
+fn tcp_stream_into_cronet_fd(stream: TcpStream) -> std::io::Result<i32> {
+    use std::os::windows::io::{AsRawSocket, IntoRawSocket};
+
+    i32::try_from(stream.as_raw_socket())
+        .map_err(|_| std::io::Error::other("Windows socket handle does not fit Cronet int"))
+        .map(|_| stream.into_raw_socket() as i32)
+}
+
+#[cfg(windows)]
+fn udp_socket_into_cronet_fd(socket: UdpSocket) -> std::io::Result<i32> {
+    use std::os::windows::io::{AsRawSocket, IntoRawSocket};
+
+    i32::try_from(socket.as_raw_socket())
+        .map_err(|_| std::io::Error::other("Windows socket handle does not fit Cronet int"))
+        .map(|_| socket.into_raw_socket() as i32)
 }
 
 /// Result returned by a custom UDP dialer.
@@ -203,6 +401,15 @@ pub struct UdpDialResult {
 struct NetworkHookState {
     tcp: Option<Box<TcpDialer>>,
     udp: Option<Box<UdpDialer>>,
+    _keepalive: Vec<Box<dyn Any + Send + Sync>>,
+}
+
+fn is_dns_endpoint(address: &str, port: u16) -> bool {
+    port == 53
+        && matches!(
+            address.trim_matches(['[', ']']),
+            "127.0.0.1" | "::1" | "localhost"
+        )
 }
 
 unsafe extern "C" fn tcp_dialer_trampoline(
