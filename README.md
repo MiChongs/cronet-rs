@@ -2,6 +2,9 @@
 
 Rust bindings for Chromium's Cronet native networking stack.
 
+The safe layer is designed for SagerNet/NaiveProxy use and is aligned with
+`SagerNet/cronet-go@d62042e935130168f4cebcd4515319a88ee7abcf`.
+
 The workspace contains:
 
 - `cronet-sys`: raw bindings generated from the selected Cronet SDK, with a
@@ -17,7 +20,27 @@ the unstable C++ ABI.
 
 ## SDK setup
 
-Build Cronet from Chromium or obtain a compatible binary SDK, then set:
+For the pinned SagerNet build on Windows:
+
+```powershell
+./scripts/fetch-native.ps1
+$env:CRONET_LIB_DIR = "$PWD/target/cronet-sdk/lib"
+$env:CRONET_LIB_NAME = "cronet"
+$env:PATH = "$PWD/target/cronet-sdk/bin;$env:PATH"
+```
+
+On Linux:
+
+```sh
+./scripts/fetch-native.sh
+export CRONET_LIB_DIR="$PWD/target/cronet-sdk/lib"
+export CRONET_LIB_NAME=cronet
+export LD_LIBRARY_PATH="$CRONET_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+```
+
+Both helpers verify the pinned upstream asset against
+[`native/SHA256SUMS`](native/SHA256SUMS). Alternatively, build Cronet from
+Chromium/NaiveProxy or supply a compatible SDK, then set:
 
 ```text
 CRONET_INCLUDE_DIR=/path/to/sdk/include
@@ -87,6 +110,13 @@ These functions require a SagerNet/Naive Cronet binary. A stock Chromium Cronet
 binary does not export all of the extension symbols. See
 [`examples/naive_connect.rs`](crates/cronet/examples/naive_connect.rs).
 
-DNS interception, ECH resolver adaptation, platform socket-pair forwarding and
-prebuilt native-library distribution are still being implemented. They are not
-yet represented as completed `cronet-go` parity.
+DNS interception, ECH resolver adaptation, platform socket forwarding and
+prebuilt native-library acquisition are implemented for the SagerNet release
+targets listed in [`native/SHA256SUMS`](native/SHA256SUMS). Custom Rust byte
+streams and packet transports can be adapted with `SplitStream` and
+`SplitDatagram`.
+
+The raw layer exposes every one of the 255 symbols used by the pinned
+`cronet-go`; the safe layer covers the lifecycle, request, streaming, DNS, ECH
+and Naive client paths. Platform-specific symbols added by a future SDK remain
+available through `cronet::sys`.

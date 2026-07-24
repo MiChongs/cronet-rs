@@ -40,6 +40,7 @@ stable binary interface.
 | Bidirectional H2/H3 stream | `BidirectionalStream`, `BidirectionalStreamHandler` |
 | Socket-like duplex stream | `BidirectionalConnection` |
 | Custom TCP/UDP dialing | `NetworkHooks`, `UdpDialResult` |
+| Generic stream/datagram bridging | `SplitStream`, `SplitDatagram` |
 | Naive CONNECT + padding | `NaiveConnection`, `NaiveConnectOptions` |
 | Naive client and pool isolation | `NaiveClient`, `NaiveClientOptions` |
 
@@ -56,10 +57,17 @@ run concurrently.
 first-eight-read/write padding records used by NaiveProxy. Applications may
 perform the handshake separately from stream startup for Fast Open behavior.
 
-`NaiveClient` now owns engine startup, Basic authentication, H2/H3 defaults,
-connection-pool isolation and safe shutdown. DNS interception, ECH resolver
-adaptation and platform socket-pair transport remain implementation work and
-are not yet claimed as covered.
+`NaiveClient` owns engine startup, Basic authentication, H2/H3 defaults,
+connection-pool isolation and safe shutdown. DNS-over-TCP/UDP interception,
+fixed and queried ECHConfig injection, HTTPS/SVCB rewriting, fixed-server
+redirects and platform socket transport are covered. Generic non-socket
+transports are connected through loopback bridges while retaining full-duplex
+stream semantics or UDP packet boundaries.
+
+The ABI manifest proves native symbol coverage. Safe-layer parity is behavioral
+rather than a one-to-one translation of Go types: Rust ownership replaces Go
+finalizers and contexts, and `std::io::{Read, Write}` plus deadlines replace
+`net.Conn`.
 
 Callback panics never unwind through native frames. Callback, executor, engine,
 request, upload and buffer lifetimes are tied together by Rust ownership in the

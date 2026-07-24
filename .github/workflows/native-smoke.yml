@@ -1,0 +1,51 @@
+name: Native Cronet
+
+on:
+  push:
+    paths:
+      - ".github/workflows/native-smoke.yml"
+      - "native/**"
+      - "scripts/**"
+      - "crates/**"
+      - "Cargo.toml"
+  pull_request:
+    paths:
+      - ".github/workflows/native-smoke.yml"
+      - "native/**"
+      - "scripts/**"
+      - "crates/**"
+      - "Cargo.toml"
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch verified SagerNet Cronet
+        run: ./scripts/fetch-native.sh
+      - name: Run native integration smoke test
+        env:
+          CRONET_LIB_DIR: ${{ github.workspace }}/target/cronet-sdk/lib
+          CRONET_LIB_NAME: cronet
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/cronet-sdk/lib
+        run: cargo run -p cronet --example native_smoke
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install import-library tool
+        run: choco install llvm --no-progress -y
+      - name: Fetch verified SagerNet Cronet
+        shell: pwsh
+        run: ./scripts/fetch-native.ps1
+      - name: Run native integration smoke test
+        shell: pwsh
+        run: |
+          $env:CRONET_LIB_DIR = "${{ github.workspace }}/target/cronet-sdk/lib"
+          $env:CRONET_LIB_NAME = "cronet"
+          $env:PATH = "${{ github.workspace }}/target/cronet-sdk/bin;$env:PATH"
+          cargo run -p cronet --example native_smoke
