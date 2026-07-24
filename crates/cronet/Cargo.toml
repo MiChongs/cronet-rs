@@ -10,6 +10,10 @@ license.workspace = true
 repository.workspace = true
 include = ["src/**", "examples/**", "README.md", "LICENSE"]
 
+[features]
+default = []
+generate-bindings = ["cronet-sys/generate-bindings"]
+
 [dependencies]
 base64 = "0.22"
 cronet-sys = { path = "../cronet-sys", version = "0.2.0" }

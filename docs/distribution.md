@@ -42,7 +42,8 @@ CRONET_LIB_NAME=cronet
 `CRONET_INCLUDE_DIR` is optional when using the exact pinned SagerNet binary:
 the crate contains matching pre-generated bindings and does not require
 libclang. When linking another Cronet revision, enable
-`cronet-sys/generate-bindings`, install libclang and set the include directory
+`cronet/generate-bindings` (or `cronet-sys/generate-bindings` when using the raw
+crate), install libclang and set the include directory
 so bindgen reads that SDK's real declarations.
 Set `CRONET_STATIC=1` only for a static library and ensure all of Chromium's
 native link dependencies are also supplied.
