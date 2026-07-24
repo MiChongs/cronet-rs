@@ -1,0 +1,18 @@
+[workspace]
+members = ["crates/cronet-sys", "crates/cronet"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "BSD-3-Clause"
+repository = "https://github.com/MiChongs/cronet-rs"
+authors = ["cronet-rs contributors"]
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"

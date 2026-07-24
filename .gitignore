@@ -1,0 +1,27 @@
+/target/
+Cargo.lock
+
+# Local code-index and editor state
+/.codebase-memory/
+/.idea/
+/.vscode/
+*.swp
+*.swo
+
+# Local configuration and logs
+.env
+.env.*
+!.env.example
+*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Native Cronet build artifacts are distributed separately
+*.dll
+*.dylib
+*.so
+*.lib
+*.a

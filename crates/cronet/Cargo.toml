@@ -1,0 +1,20 @@
+[package]
+name = "cronet"
+description = "Safe Rust ownership layer for Chromium Cronet"
+categories = ["network-programming", "api-bindings"]
+keywords = ["cronet", "chromium", "http3", "quic", "networking"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+include = ["src/**", "examples/**", "README.md"]
+
+[dependencies]
+cronet-sys = { path = "../cronet-sys", version = "0.1.0" }
+futures-channel = "0.3"
+fastrand = "2"
+serde_json = "1"
+
+[lints]
+workspace = true

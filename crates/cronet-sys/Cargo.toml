@@ -1,0 +1,19 @@
+[package]
+name = "cronet-sys"
+description = "Complete raw Rust bindings to Chromium Cronet's generated C ABI"
+categories = ["external-ffi-bindings", "network-programming"]
+keywords = ["cronet", "chromium", "http3", "quic", "ffi"]
+links = "cronet"
+build = "build.rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+include = ["src/**", "include/**", "build.rs", "wrapper.h", "README.md"]
+
+[build-dependencies]
+bindgen = "0.72"
+
+[lints]
+workspace = true
