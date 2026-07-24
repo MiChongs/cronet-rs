@@ -100,7 +100,10 @@ impl NetworkError {
         // fields are copied.
         unsafe {
             Self {
-                code: sys::Cronet_Error_error_code_get(raw),
+                // Bindgen may represent this C enum as either i32 or u32,
+                // depending on the target ABI. Cronet's public error codes
+                // are non-negative and fit in i32.
+                code: sys::Cronet_Error_error_code_get(raw) as i32,
                 message: copy_string(sys::Cronet_Error_message_get(raw)),
                 internal_error_code: sys::Cronet_Error_internal_error_code_get(raw),
                 immediately_retryable: sys::Cronet_Error_immediately_retryable_get(raw),
