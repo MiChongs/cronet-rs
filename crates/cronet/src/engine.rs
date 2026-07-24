@@ -207,7 +207,7 @@ struct NetworkHookState {
 
 unsafe extern "C" fn tcp_dialer_trampoline(
     context: *mut core::ffi::c_void,
-    address: *mut core::ffi::c_char,
+    address: *const core::ffi::c_char,
     port: u16,
 ) -> i32 {
     let outcome = catch_unwind(AssertUnwindSafe(|| {
@@ -228,7 +228,7 @@ unsafe extern "C" fn tcp_dialer_trampoline(
 
 unsafe extern "C" fn udp_dialer_trampoline(
     context: *mut core::ffi::c_void,
-    address: *mut core::ffi::c_char,
+    address: *const core::ffi::c_char,
     port: u16,
     out_local_address: *mut core::ffi::c_char,
     out_local_port: *mut u16,

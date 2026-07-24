@@ -13,8 +13,10 @@ mod client;
 mod engine;
 mod error;
 mod executor;
+mod metrics;
 mod model;
 mod naive;
+mod naive_client;
 mod params;
 mod request;
 mod status;
@@ -26,8 +28,12 @@ pub use client::{Client, RequestError, RequestOptions, Response};
 pub use engine::{Engine, NetworkHooks, UdpDialResult};
 pub use error::{Error, Result};
 pub use executor::{Executor, Runnable};
+pub use metrics::{
+    FinishedReason, Metrics, RequestFinished, RequestFinishedInfo, RequestFinishedListener,
+};
 pub use model::{Header, NetworkError, ResponseInfo};
 pub use naive::{NaiveConnectOptions, NaiveConnection};
+pub use naive_client::{NaiveClient, NaiveClientOptions, NaiveClientStartError};
 pub use params::{CacheMode, EngineParams, RequestParams, RequestPriority};
 pub use request::{Request, UninitializedRequest};
 pub use status::RequestStatus;

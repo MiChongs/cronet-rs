@@ -17,6 +17,10 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=include/cronet_rs_dev.h");
+    println!("cargo:rerun-if-changed=include/cronet_export.h");
+    println!("cargo:rerun-if-changed=include/cronet_rs_bidirectional.h");
+    println!("cargo:rerun-if-changed=include/cronet_rs_naive.h");
+    println!("cargo:rerun-if-changed=abi/cronet-go-d62042e.symbols");
 
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let mut builder = bindgen::Builder::default()

@@ -4,8 +4,8 @@ Rust bindings for Chromium's Cronet native networking stack.
 
 The workspace contains:
 
-- `cronet-sys`: complete, version-matched raw bindings generated from the
-  Cronet SDK's `cronet.idl_c.h`.
+- `cronet-sys`: raw bindings generated from the selected Cronet SDK, with a
+  bundled development ABI pinned to `SagerNet/cronet-go@d62042e`.
 - `cronet`: an ownership and callback layer with engines, request builders,
   executors, response/error snapshots, upload providers, request status,
   blocking collection and runtime-independent async requests.
@@ -32,9 +32,10 @@ SDK. The directory containing `cronet_export.h` may be supplied separately
 through `CRONET_EXPORT_INCLUDE_DIR`.
 
 For editor work and documentation builds without a native SDK, the crate uses
-a bundled ABI-compatible development header covering the safe wrapper and
-prints a build warning. Set `CRONET_INCLUDE_DIR` for production so bindings are
-complete for the exact binary being distributed.
+the generated Cronet header and bidirectional-stream header from the pinned
+NaiveProxy source. A test checks all 255 native symbols loaded by the matching
+`cronet-go` commit. Set `CRONET_INCLUDE_DIR` for production so bindings are
+generated for the exact binary being distributed.
 
 ```powershell
 cargo check --workspace
@@ -77,9 +78,15 @@ The crate also binds the extensions used by
 - trusted-root injection and connection-pool shutdown;
 - DNS, ECH, HTTP/2, QUIC and socket-pool experimental options;
 - socket-like `BidirectionalConnection`;
+- engine-owning `NaiveClient` with Basic authentication and connection-pool
+  isolation;
 - CONNECT headers and the first-eight-chunk Naive padding protocol through
   `NaiveConnection`.
 
 These functions require a SagerNet/Naive Cronet binary. A stock Chromium Cronet
 binary does not export all of the extension symbols. See
 [`examples/naive_connect.rs`](crates/cronet/examples/naive_connect.rs).
+
+DNS interception, ECH resolver adaptation, platform socket-pair forwarding and
+prebuilt native-library distribution are still being implemented. They are not
+yet represented as completed `cronet-go` parity.
