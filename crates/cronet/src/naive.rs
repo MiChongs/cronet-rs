@@ -1,4 +1,7 @@
-use std::io::{self, Read, Write};
+use std::{
+    io::{self, Read, Write},
+    time::{Duration, Instant},
+};
 
 use crate::{BidirectionalConnection, Engine, Header};
 
@@ -132,6 +135,31 @@ impl NaiveConnection<'_> {
     /// Returns the unpadded stream adapter.
     pub fn inner(&self) -> &BidirectionalConnection<'_> {
         &self.inner
+    }
+
+    /// Sets an absolute deadline for reads, writes and the CONNECT handshake.
+    pub fn set_deadline(&self, deadline: Option<Instant>) {
+        self.inner.set_deadline(deadline);
+    }
+
+    /// Sets an absolute deadline for reads and the CONNECT handshake.
+    pub fn set_read_deadline(&self, deadline: Option<Instant>) {
+        self.inner.set_read_deadline(deadline);
+    }
+
+    /// Sets an absolute deadline for writes.
+    pub fn set_write_deadline(&self, deadline: Option<Instant>) {
+        self.inner.set_write_deadline(deadline);
+    }
+
+    /// Sets a relative read timeout. `None` disables it.
+    pub fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.inner.set_read_timeout(timeout)
+    }
+
+    /// Sets a relative write timeout. `None` disables it.
+    pub fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.inner.set_write_timeout(timeout)
     }
 
     fn read_exact_inner(&self, mut output: &mut [u8]) -> io::Result<()> {
