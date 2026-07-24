@@ -68,7 +68,7 @@ cargo package -p cronet
 ```
 
 See [docs/distribution.md](docs/distribution.md) for binary distribution and
-versioning rules.
+versioning rules, and [CHANGELOG.md](CHANGELOG.md) for release changes.
 
 ## High-level usage
 
