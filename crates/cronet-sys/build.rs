@@ -1,8 +1,7 @@
 //! Generates raw bindings for the selected Cronet SDK.
 
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
