@@ -27,7 +27,7 @@ mod upload;
 pub use buffer::Buffer;
 pub use callback::{RequestHandle, UrlRequestCallback, UrlRequestHandler};
 pub use client::{Client, RequestError, RequestOptions, Response};
-pub use engine::{Engine, NetworkHooks, UdpDialResult};
+pub use engine::{Engine, NetworkHooks, SplitDatagram, SplitStream, UdpDialResult};
 pub use error::{Error, Result};
 pub use executor::{Executor, Runnable};
 pub use metrics::{
